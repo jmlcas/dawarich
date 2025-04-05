@@ -1,0 +1,90 @@
+services:
+
+  dawarich_redis:
+    image: redis:7.0-alpine
+    container_name: dawarich_redis
+    command: redis-server
+    volumes:
+      - ./dawarich_redis_data:/var/shared/redis
+    restart: unless-stopped
+
+  dawarich_db:
+    image: postgis/postgis:14-3.5-alpine
+    shm_size: 1G
+    container_name: dawarich_db
+    volumes:
+      - ./dawarich_db_data:/var/lib/postgresql/data
+      - ./dawarich_shared:/var/shared
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    restart: unless-stopped
+
+  dawarich_app:
+    image: freikin/dawarich:latest
+    container_name: dawarich_app
+    volumes:
+      - ./dawarich_public:/var/app/public
+      - ./dawarich_watched:/var/app/tmp/imports/watched
+    ports:
+      - 3000:3000
+    stdin_open: true
+    tty: true
+    entrypoint: web-entrypoint.sh
+    command: ['bin/rails', 'server', '-p', '3000', '-b', '::']
+    restart: unless-stopped
+    environment:
+      RAILS_ENV: development
+      REDIS_URL: redis://dawarich_redis:6379/0
+      DATABASE_HOST: dawarich_db
+      DATABASE_USERNAME: postgres
+      DATABASE_PASSWORD: password
+      DATABASE_NAME: dawarich_development
+      MIN_MINUTES_SPENT_IN_CITY: 60
+      APPLICATION_HOSTS: localhost  # IP:puerto - dominio.com
+      TIME_ZONE: Europe/Madrid
+      APPLICATION_PROTOCOL: http
+      DISTANCE_UNIT: km
+      ENABLE_TELEMETRY: false 
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+    depends_on:
+      - dawarich_db
+      - dawarich_redis
+
+  dawarich_sidekiq:
+    image: freikin/dawarich:latest
+    container_name: dawarich_sidekiq
+    volumes:
+      - ./dawarich_public:/var/app/public
+      - ./dawarich_watched:/var/app/tmp/imports/watched
+    stdin_open: true
+    tty: true
+    entrypoint: sidekiq-entrypoint.sh
+    command: ['sidekiq']
+    restart: unless-stopped
+    environment:
+      RAILS_ENV: development
+      REDIS_URL: redis://dawarich_redis:6379/0
+      DATABASE_HOST: dawarich_db
+      DATABASE_USERNAME: postgres
+      DATABASE_PASSWORD: password
+      DATABASE_NAME: dawarich_development
+      APPLICATION_HOSTS: localhost         # IP:puerto - dominio.com
+      BACKGROUND_PROCESSING_CONCURRENCY: 10
+      APPLICATION_PROTOCOL: http
+      DISTANCE_UNIT: km
+      ENABLE_TELEMETRY: false
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+    depends_on:
+      - dawarich_db
+      - dawarich_redis
+      - dawarich_app
+      
